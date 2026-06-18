@@ -552,13 +552,36 @@ async function sendMsg(){
     removeTyping();
     appendMsg('ai', reply);
 
-    /* 語音播報（瀏覽器 TTS） */
+    /* 語音播報（爸爸男聲） */
     if(window.speechSynthesis){
-      const u = new SpeechSynthesisUtterance(reply.replace(/[\u{1F300}-\u{1FAFF}]/gu,''));
-      u.lang = 'zh-TW';
-      u.rate = 0.88;
-      u.pitch = 1.2;
-      window.speechSynthesis.speak(u);
+      // 等聲音列表載入完畢再播
+      const speak = () => {
+        const u = new SpeechSynthesisUtterance(reply.replace(/[\u{1F300}-\u{1FAFF}]/gu,''));
+        u.lang = 'zh-TW';
+        u.rate = 0.82;    // 稍慢，沉穩感
+        u.pitch = 0.75;   // 低音調，爸爸感
+        u.volume = 1;
+
+        // 優先選男聲：先找中文男聲，找不到就找任何男聲
+        const voices = window.speechSynthesis.getVoices();
+        const zhMale = voices.find(v =>
+          /zh|chinese|mandarin/i.test(v.lang) &&
+          /male|man|guy|dad|he-|ming|yun|google 普通话|google 國語|bo|da-TW/i.test(v.name)
+        );
+        const anyMale = voices.find(v =>
+          /male|man|guy|david|mark|daniel|jorge|diego|carlos/i.test(v.name)
+        );
+        const zhVoice = voices.find(v => /zh-TW|zh_TW/i.test(v.lang));
+
+        u.voice = zhMale || anyMale || zhVoice || null;
+        window.speechSynthesis.speak(u);
+      };
+
+      if(window.speechSynthesis.getVoices().length > 0){
+        speak();
+      } else {
+        window.speechSynthesis.onvoiceschanged = speak;
+      }
     }
 
   } catch(e){
