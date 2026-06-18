@@ -552,37 +552,8 @@ async function sendMsg(){
     removeTyping();
     appendMsg('ai', reply);
 
-    /* 語音播報（爸爸男聲） */
-    if(window.speechSynthesis){
-      // 等聲音列表載入完畢再播
-      const speak = () => {
-        const u = new SpeechSynthesisUtterance(reply.replace(/[\u{1F300}-\u{1FAFF}]/gu,''));
-        u.lang = 'zh-TW';
-        u.rate = 0.82;    // 稍慢，沉穩感
-        u.pitch = 0.75;   // 低音調，爸爸感
-        u.volume = 1;
-
-        // 優先選男聲：先找中文男聲，找不到就找任何男聲
-        const voices = window.speechSynthesis.getVoices();
-        const zhMale = voices.find(v =>
-          /zh|chinese|mandarin/i.test(v.lang) &&
-          /male|man|guy|dad|he-|ming|yun|google 普通话|google 國語|bo|da-TW/i.test(v.name)
-        );
-        const anyMale = voices.find(v =>
-          /male|man|guy|david|mark|daniel|jorge|diego|carlos/i.test(v.name)
-        );
-        const zhVoice = voices.find(v => /zh-TW|zh_TW/i.test(v.lang));
-
-        u.voice = zhMale || anyMale || zhVoice || null;
-        window.speechSynthesis.speak(u);
-      };
-
-      if(window.speechSynthesis.getVoices().length > 0){
-        speak();
-      } else {
-        window.speechSynthesis.onvoiceschanged = speak;
-      }
-    }
+    /* 語音播報（ElevenLabs 爸爸聲音） */
+    await speakWithElevenLabs(reply);
 
   } catch(e){
     removeTyping();
@@ -591,6 +562,61 @@ async function sendMsg(){
 
   btnSend.disabled = false;
   renderSuggestions();
+}
+
+/* ── ElevenLabs 語音合成 ── */
+const XI_API_KEY  = 'Ogoa7jkNFGRcsplRAJhr';
+const XI_VOICE_ID = 'bc56cc97c7430c1cd55c31b0a27915e3f6b6c4ec6ae12b8f2739f170cf7cc228';
+
+async function speakWithElevenLabs(text){
+  // 清除 emoji 與特殊符號
+  const clean = text.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
+  if(!clean) return;
+
+  try {
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${XI_VOICE_ID}/stream`, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': XI_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: clean,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: {
+          stability: 0.6,
+          similarity_boost: 0.85,
+          style: 0.2,
+          use_speaker_boost: true
+        }
+      })
+    });
+
+    if(!res.ok){
+      console.warn('ElevenLabs 失敗，改用瀏覽器 TTS');
+      fallbackSpeak(clean);
+      return;
+    }
+
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.onended = () => URL.revokeObjectURL(url);
+    audio.play();
+
+  } catch(e) {
+    console.warn('ElevenLabs 錯誤:', e);
+    fallbackSpeak(clean);
+  }
+}
+
+function fallbackSpeak(text){
+  if(!window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'zh-TW';
+  u.rate = 0.82;
+  u.pitch = 0.75;
+  window.speechSynthesis.speak(u);
 }
 
 /* ── 語音輸入 ── */
