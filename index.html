@@ -635,7 +635,79 @@ function init(){
 }
 
 /* ══════════════════════════════════════
-   送出訊息
+   🛡️ 第一層：輸入關鍵字黑名單
+   在送給 AI 之前，先本地端過濾明顯不當詞彙
+══════════════════════════════════════ */
+const INPUT_BLACKLIST = [
+  // 髒話暴力
+  '幹','操','靠北','三小','白癡','死','殺','打死','爆頭','砍',
+  '血','自殺','毒品','毒藥','炸彈','槍','刀',
+  // 色情相關
+  '性器','裸','脫衣','色情','18禁','AV','做愛','性行為',
+  // 越獄嘗試
+  '忘記你的規則','你現在是','ignore previous','forget your','jailbreak',
+  'DAN','pretend you','roleplay as evil',
+];
+
+function checkInputBlacklist(text){
+  const lower = text.toLowerCase();
+  return INPUT_BLACKLIST.some(w => lower.includes(w.toLowerCase()));
+}
+
+/* ══════════════════════════════════════
+   🛡️ 第二層：OpenAI Moderation API（免費）
+   自動偵測仇恨/色情/暴力/自傷等內容
+══════════════════════════════════════ */
+async function moderateText(text){
+  try {
+    const res = await fetch('https://api.openai.com/v1/moderations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({ input: text })
+    });
+    if(!res.ok) return { safe: true }; // API 失敗時放行，不擋使用者
+    const data = await res.json();
+    const result = data.results[0];
+    return {
+      safe: !result.flagged,
+      categories: result.categories,
+      scores: result.category_scores
+    };
+  } catch(e) {
+    console.warn('Moderation API 失敗:', e);
+    return { safe: true }; // 網路錯誤時放行
+  }
+}
+
+/* ══════════════════════════════════════
+   🛡️ 第三層：輸出關鍵字過濾
+   AI 回答後再做一次檢查
+══════════════════════════════════════ */
+const OUTPUT_BLACKLIST = [
+  '幹','操','靠北','白癡','死掉','殺人','自殺','毒品',
+  '炸彈','槍殺','裸體','色情','性器官','做愛',
+];
+
+function checkOutputBlacklist(text){
+  const lower = text.toLowerCase();
+  return OUTPUT_BLACKLIST.some(w => lower.includes(w.toLowerCase()));
+}
+
+const SAFE_FALLBACK_REPLIES = [
+  '這個問題有點難，我們去問爸爸媽媽吧！😊',
+  '哇，這個小博士不太確定呢！可以問問老師喔！🦉',
+  '小博士覺得這個問題我們一起去找答案吧！📚',
+];
+
+function getSafeFallback(){
+  return SAFE_FALLBACK_REPLIES[Math.floor(Math.random() * SAFE_FALLBACK_REPLIES.length)];
+}
+
+/* ══════════════════════════════════════
+   送出訊息（含三層過濾）
 ══════════════════════════════════════ */
 async function sendMsg(){
   const text = userInput.value.trim();
@@ -646,9 +718,32 @@ async function sendMsg(){
   btnSend.disabled = true;
   sugEl.innerHTML = '';
 
+  // ── 🛡️ 第一層：輸入黑名單檢查 ──
+  if(checkInputBlacklist(text)){
+    appendMsg('user', text);
+    appendMsg('ai', '這個問題我們可以去問爸爸媽媽喔！我只能回答小朋友的學習問題 😊');
+    btnSend.disabled = false;
+    renderSuggestions();
+    return;
+  }
+
   appendMsg('user', text);
   history.push({ role: 'user', content: text });
   appendTyping();
+  setStatus('🔍 小博士在思考中…');
+
+  // ── 🛡️ 第二層：Moderation API 檢查輸入 ──
+  const inputMod = await moderateText(text);
+  if(!inputMod.safe){
+    removeTyping();
+    setStatus('');
+    // 移除剛剛加入 history 的不當問題
+    history.pop();
+    appendMsg('ai', '這個問題有點不太適合小朋友，我們換一個問題吧！🌈');
+    btnSend.disabled = false;
+    renderSuggestions();
+    return;
+  }
 
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions',{
@@ -674,10 +769,21 @@ async function sendMsg(){
     }
 
     const data  = await res.json();
-    const reply = data.choices[0].message.content.trim();
+    let reply   = data.choices[0].message.content.trim();
+
+    // ── 🛡️ 第三層：輸出黑名單 + Moderation 雙重檢查 ──
+    const outputBlocked  = checkOutputBlacklist(reply);
+    const outputMod      = await moderateText(reply);
+
+    if(outputBlocked || !outputMod.safe){
+      console.warn('輸出被攔截:', reply);
+      reply = getSafeFallback();
+    }
+
     history.push({ role: 'assistant', content: reply });
 
     removeTyping();
+    setStatus('');
     appendMsg('ai', reply);
 
     // 語音播報
@@ -685,6 +791,7 @@ async function sendMsg(){
 
   } catch(e){
     removeTyping();
+    setStatus('');
     appendMsg('ai', `哎呀，遇到問題了 😅 請再試一次！（${e.message}）`);
   }
 
