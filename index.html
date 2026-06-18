@@ -800,30 +800,30 @@ async function sendMsg(){
 }
 
 /* ══════════════════════════════════════
-   ElevenLabs TTS（Safari 相容版）
+   ElevenLabs TTS（Safari / iPhone 最相容版）
+   核心策略：用 <audio> 標籤 + Blob URL
+   Safari 對 <audio>.play() 限制最少，
+   只要在使用者互動後的 async 鏈裡呼叫就能播
 ══════════════════════════════════════ */
 const XI_API_KEY  = 'bc56cc97c7430c1cd55c31b0a27915e3f6b6c4ec6ae12b8f2739f170cf7cc228';
 const XI_VOICE_ID = 'Ogoa7jkNFGRcsplRAJhr';
 
-// 共用 AudioContext（Safari 需在使用者互動後建立）
-let sharedAudioCtx = null;
-
-function getAudioCtx(){
-  if(!sharedAudioCtx || sharedAudioCtx.state === 'closed'){
-    sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  // Safari 可能需要 resume
-  if(sharedAudioCtx.state === 'suspended'){
-    sharedAudioCtx.resume();
-  }
-  return sharedAudioCtx;
+// 預先建立並靜音播放一次，解鎖 Safari 的音訊限制
+// 在第一次使用者觸摸時執行
+let audioUnlocked = false;
+function unlockAudio(){
+  if(audioUnlocked) return;
+  audioUnlocked = true;
+  const a = new Audio();
+  a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAA'
+         +'ABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='; // 極短靜音 wav
+  a.play().catch(()=>{});
 }
+document.addEventListener('touchstart', unlockAudio, { once: true });
+document.addEventListener('click',      unlockAudio, { once: true });
 
-// 確保 AudioContext 在第一次使用者觸摸時啟動
-document.addEventListener('touchstart', () => { getAudioCtx(); }, { once: true });
-document.addEventListener('click',      () => { getAudioCtx(); }, { once: true });
-
-let audioQueue = Promise.resolve();
+// 播放佇列：確保不重疊
+let currentAudio = null;
 
 async function speakWithElevenLabs(text){
   const clean = text
@@ -832,14 +832,16 @@ async function speakWithElevenLabs(text){
     .trim();
   if(!clean) return;
 
-  audioQueue = audioQueue.then(() => _doSpeak(clean)).catch(()=>{});
-  return audioQueue;
-}
+  // 停掉上一句還在播的聲音
+  if(currentAudio){
+    currentAudio.pause();
+    currentAudio.src = '';
+    currentAudio = null;
+  }
 
-async function _doSpeak(clean){
+  setStatus('<span>🔊 小博士說話中 <span class="speaking-wave"><span></span><span></span><span></span><span></span><span></span></span></span>');
+
   try {
-    setStatus('<span>🔊 小博士說話中 <span class="speaking-wave"><span></span><span></span><span></span><span></span><span></span></span></span>');
-
     const res = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${XI_VOICE_ID}`,
       {
@@ -853,9 +855,9 @@ async function _doSpeak(clean){
           text: clean,
           model_id: 'eleven_multilingual_v2',
           voice_settings: {
-            stability:        0.55,
-            similarity_boost: 0.90,
-            style:            0.15,
+            stability:         0.55,
+            similarity_boost:  0.90,
+            style:             0.15,
             use_speaker_boost: true
           }
         })
@@ -863,45 +865,51 @@ async function _doSpeak(clean){
     );
 
     if(!res.ok){
-      console.warn('ElevenLabs 錯誤:', res.status, await res.text());
+      const errBody = await res.text();
+      console.warn('ElevenLabs 錯誤:', res.status, errBody);
       setStatus('');
       fallbackSpeak(clean);
       return;
     }
 
-    const arrayBuffer = await res.arrayBuffer();
-    const ctx         = getAudioCtx();
+    // 取得音訊 blob → 轉成 URL → 用 <audio> 播放
+    const blob   = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
 
-    // Safari 的 decodeAudioData 不支援 Promise 語法，用 callback
-    const decoded = await new Promise((resolve, reject) => {
-      ctx.decodeAudioData(arrayBuffer, resolve, reject);
-    });
-
-    const source  = ctx.createBufferSource();
-    source.buffer = decoded;
-    source.connect(ctx.destination);
+    const audio   = new Audio(blobUrl);
+    currentAudio  = audio;
+    audio.preload = 'auto';
 
     await new Promise((resolve) => {
-      source.onended = resolve;
-      source.start(0);
+      audio.onended  = () => { URL.revokeObjectURL(blobUrl); setStatus(''); resolve(); };
+      audio.onerror  = () => { URL.revokeObjectURL(blobUrl); setStatus(''); fallbackSpeak(clean); resolve(); };
+      // Safari 需要顯式 load 再 play
+      audio.load();
+      audio.play().catch(err => {
+        console.warn('audio.play() 失敗:', err);
+        URL.revokeObjectURL(blobUrl);
+        setStatus('');
+        fallbackSpeak(clean);
+        resolve();
+      });
     });
 
-    setStatus('');
-
   } catch(e){
-    console.warn('播放錯誤:', e);
+    console.warn('ElevenLabs 整體錯誤:', e.message);
     setStatus('');
     fallbackSpeak(clean);
   }
+
+  currentAudio = null;
 }
 
 function fallbackSpeak(text){
   if(!window.speechSynthesis) return;
-  const u    = new SpeechSynthesisUtterance(text);
-  u.lang     = 'zh-TW';
-  u.rate     = 0.85;
-  u.pitch    = 0.8;
-  u.volume   = 1;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang    = 'zh-TW';
+  u.rate    = 0.85;
+  u.pitch   = 0.8;
+  u.volume  = 1;
   window.speechSynthesis.speak(u);
 }
 
