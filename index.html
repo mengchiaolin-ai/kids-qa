@@ -901,6 +901,10 @@ async function sendMsg(){
   }
   log('ok', '第一層通過（黑名單）');
 
+  // ⚡ 關鍵：在使用者互動的同步瞬間先佔住播放權
+  // Safari 只允許在使用者直接觸發的同步呼叫中啟動音訊
+  reserveAudioSlot();
+
   appendMsg('user', text);
   history.push({ role: 'user', content: text });
   appendTyping();
@@ -1004,8 +1008,26 @@ function unlockAudio(){
 document.addEventListener('touchstart', unlockAudio, { once: true });
 document.addEventListener('click',      unlockAudio, { once: true });
 
-// 播放佇列：確保不重疊
-let currentAudio = null;
+// ── Safari 音訊佔位器 ──
+// Safari 必須在使用者觸摸的「同步瞬間」呼叫 audio.play()
+// 之後才能在 async 完成後替換 src 繼續播放
+let reservedAudio = null;
+
+// 在使用者點送出按鈕的同一瞬間呼叫，佔住播放權
+function reserveAudioSlot(){
+  // 停掉上一個
+  if(reservedAudio){
+    reservedAudio.pause();
+    reservedAudio.src = '';
+    reservedAudio = null;
+  }
+  // 用靜音 wav 先 play()，取得播放許可
+  const a = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAACJWAAABAAgAZGF0YQAAAAA=');
+  a.play().then(() => log('audio', '音訊佔位成功 ✓ 播放權已取得'))
+          .catch(e => log('warn', `音訊佔位失敗：${e.message}`));
+  reservedAudio = a;
+  return a;
+}
 
 async function speakWithElevenLabs(text){
   const clean = text
@@ -1014,17 +1036,8 @@ async function speakWithElevenLabs(text){
     .trim();
   if(!clean) return;
 
-  // 停掉上一句還在播的聲音
-  if(currentAudio){
-    currentAudio.pause();
-    currentAudio.src = '';
-    currentAudio = null;
-  }
-
   setStatus('<span>🔊 小博士說話中 <span class="speaking-wave"><span></span><span></span><span></span><span></span><span></span></span></span>');
-  log('audio', `ElevenLabs 請求開始，文字長度：${clean.length} 字`);
-  log('audio', `Voice ID：${XI_VOICE_ID}`);
-  log('audio', `audioUnlocked：${audioUnlocked}`);
+  log('audio', `ElevenLabs 請求，文字：${clean.length} 字`);
 
   try {
     const res = await fetch(
@@ -1049,59 +1062,46 @@ async function speakWithElevenLabs(text){
       }
     );
 
-    log(res.ok ? 'audio' : 'error', `ElevenLabs HTTP 回應：${res.status} ${res.statusText}`);
-
+    log(res.ok ? 'audio' : 'error', `ElevenLabs HTTP：${res.status}`);
     if(!res.ok){
-      const errBody = await res.text();
-      log('error', `ElevenLabs 錯誤內容：${errBody}`);
-      setStatus('');
-      fallbackSpeak(clean);
-      return;
+      log('error', `ElevenLabs 錯誤：${await res.text()}`);
+      setStatus(''); fallbackSpeak(clean); return;
     }
 
     const blob    = await res.blob();
-    log('audio', `Blob 取得成功，大小：${(blob.size/1024).toFixed(1)} KB，類型：${blob.type}`);
+    log('audio', `Blob：${(blob.size/1024).toFixed(1)} KB，類型：${blob.type}`);
     const blobUrl = URL.createObjectURL(blob);
 
-    const audio   = new Audio(blobUrl);
-    currentAudio  = audio;
+    // 停掉佔位靜音，改用真正音訊
+    if(reservedAudio){
+      reservedAudio.pause();
+      reservedAudio.src = '';
+      reservedAudio = null;
+    }
+
+    const audio = new Audio(blobUrl);
     audio.preload = 'auto';
 
     await new Promise((resolve) => {
-      audio.oncanplaythrough = () => log('audio', 'canplaythrough 觸發，準備播放');
-      audio.onplay    = () => log('audio', '▶ 開始播放');
-      audio.onended   = () => {
-        log('audio', '✓ 播放完畢');
-        URL.revokeObjectURL(blobUrl);
-        setStatus('');
-        resolve();
-      };
-      audio.onerror   = (e) => {
-        log('error', `audio.onerror：code=${audio.error?.code}，message=${audio.error?.message}`);
-        URL.revokeObjectURL(blobUrl);
-        setStatus('');
-        fallbackSpeak(clean);
-        resolve();
+      audio.onplay   = () => log('audio', '▶ 開始播放');
+      audio.onended  = () => { log('audio','✓ 播放完畢'); URL.revokeObjectURL(blobUrl); setStatus(''); resolve(); };
+      audio.onerror  = () => {
+        log('error', `onerror：code=${audio.error?.code}`);
+        URL.revokeObjectURL(blobUrl); setStatus(''); fallbackSpeak(clean); resolve();
       };
       audio.load();
-      audio.play().then(()=>{
-        log('audio', 'play() Promise resolved ✓');
-      }).catch(err => {
-        log('error', `audio.play() 拒絕：${err.name}：${err.message}`);
-        URL.revokeObjectURL(blobUrl);
-        setStatus('');
-        fallbackSpeak(clean);
-        resolve();
-      });
+      audio.play()
+        .then(() => log('audio','play() 成功 ✓'))
+        .catch(err => {
+          log('error', `play() 拒絕：${err.name}：${err.message}`);
+          URL.revokeObjectURL(blobUrl); setStatus(''); fallbackSpeak(clean); resolve();
+        });
     });
 
   } catch(e){
     log('error', `speakWithElevenLabs 例外：${e.name}：${e.message}`);
-    setStatus('');
-    fallbackSpeak(clean);
+    setStatus(''); fallbackSpeak(clean);
   }
-
-  currentAudio = null;
 }
 
 function fallbackSpeak(text){
