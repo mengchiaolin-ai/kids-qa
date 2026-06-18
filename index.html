@@ -991,11 +991,7 @@ async function sendMsg(){
    Safari 對 <audio>.play() 限制最少，
    只要在使用者互動後的 async 鏈裡呼叫就能播
 ══════════════════════════════════════ */
-const XI_API_KEY  = 'bc56cc97c7430c1cd55c31b0a27915e3f6b6c4ec6ae12b8f2739f170cf7cc228';
-const XI_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'; // George - Warm, Captivating Storyteller
-
-// ── Safari 音訊解鎖：用 AudioContext 產生靜音 ──
-// AudioContext 方式最被 Safari 接受，不依賴外部檔案格式
+// ── Safari AudioContext 解鎖 ──
 let _audioCtx = null;
 
 function getOrCreateAudioCtx(){
@@ -1005,32 +1001,28 @@ function getOrCreateAudioCtx(){
   return _audioCtx;
 }
 
-// 在使用者第一次觸摸時 resume AudioContext
 document.addEventListener('touchstart', () => {
-  try { getOrCreateAudioCtx().resume(); log('audio','AudioContext resume on touchstart'); } catch(e){}
-}, { once: false }); // 每次觸摸都嘗試，確保不會 suspended
+  try { getOrCreateAudioCtx().resume(); } catch(e){}
+}, { once: false });
 
-// ── 佔位播放：在使用者點擊的同步瞬間呼叫 ──
-// 用 AudioContext 產生 0.001 秒靜音 buffer 並播放
-// Safari 對 AudioContext.createBufferSource().start() 的限制比 Audio.play() 寬鬆
+// 佔位：使用者點送出的同步瞬間呼叫，解鎖 AudioContext
 function reserveAudioSlot(){
   try {
-    const ctx    = getOrCreateAudioCtx();
-    // 如果 suspended，先 resume（同步呼叫，Safari 允許）
+    const ctx = getOrCreateAudioCtx();
     if(ctx.state === 'suspended') ctx.resume();
-
-    const buf    = ctx.createBuffer(1, 1, 22050); // 1 sample 靜音
-    const source = ctx.createBufferSource();
-    source.buffer = buf;
-    source.connect(ctx.destination);
-    source.start(0);
-    log('audio', `AudioContext 佔位成功 ✓ state=${ctx.state}`);
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+    log('audio', `AudioContext 佔位 ✓ state=${ctx.state}`);
   } catch(e){
     log('warn', `AudioContext 佔位失敗：${e.message}`);
   }
 }
 
-async function speakWithElevenLabs(text){
+// ── OpenAI TTS（中文重音準確）──
+async function speakWithElevenLabs(text){  // 保留函式名稱避免其他地方要改
   const clean = text
     .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1FFFF}]/gu, '')
     .replace(/[^\u0000-\uFFFF]/g, '')
@@ -1038,43 +1030,36 @@ async function speakWithElevenLabs(text){
   if(!clean) return;
 
   setStatus('<span>🔊 小博士說話中 <span class="speaking-wave"><span></span><span></span><span></span><span></span><span></span></span></span>');
-  log('audio', `ElevenLabs 請求，文字：${clean.length} 字`);
+  log('audio', `OpenAI TTS 請求，文字：${clean.length} 字`);
 
   try {
-    const res = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${XI_VOICE_ID}`,
-      {
-        method: 'POST',
-        headers: {
-          'xi-api-key':   XI_API_KEY,
-          'Content-Type': 'application/json',
-          'Accept':       'audio/mpeg'
-        },
-        body: JSON.stringify({
-          text: clean,
-          model_id: 'eleven_multilingual_v2',
-          voice_settings: {
-            stability:         0.55,
-            similarity_boost:  0.90,
-            style:             0.15,
-            use_speaker_boost: true
-          }
-        })
-      }
-    );
+    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type':  'application/json'
+      },
+      body: JSON.stringify({
+        model: 'tts-1',
+        input: clean,
+        voice: 'onyx',      // 低沉穩重男聲，中文重音最自然
+        speed: 0.95,        // 略慢，更沉穩
+        response_format: 'mp3'
+      })
+    });
 
-    log(res.ok ? 'audio' : 'error', `ElevenLabs HTTP：${res.status}`);
+    log(res.ok ? 'audio' : 'error', `OpenAI TTS HTTP：${res.status}`);
     if(!res.ok){
-      log('error', `ElevenLabs 錯誤：${await res.text()}`);
+      const err = await res.json().catch(()=>({}));
+      log('error', `OpenAI TTS 錯誤：${err?.error?.message || res.status}`);
       setStatus(''); fallbackSpeak(clean); return;
     }
 
-    const blob    = await res.blob();
+    const blob     = await res.blob();
     log('audio', `Blob：${(blob.size/1024).toFixed(1)} KB，類型：${blob.type}`);
 
-    // 用同一個 AudioContext 解碼並播放
-    // 和佔位用同一個 ctx，Safari 信任同一來源
-    const ctx         = getOrCreateAudioCtx();
+    // 用 AudioContext 解碼播放（Safari 相容）
+    const ctx = getOrCreateAudioCtx();
     log('audio', `AudioContext state：${ctx.state}`);
     if(ctx.state === 'suspended'){
       await ctx.resume();
@@ -1093,11 +1078,11 @@ async function speakWithElevenLabs(text){
       source.connect(ctx.destination);
       source.onended = () => { log('audio','✓ 播放完畢'); setStatus(''); resolve(); };
       source.start(0);
-      log('audio', '▶ AudioContext 開始播放');
+      log('audio', '▶ 開始播放');
     });
 
   } catch(e){
-    log('error', `speakWithElevenLabs 例外：${e.name}：${e.message}`);
+    log('error', `OpenAI TTS 例外：${e.name}：${e.message}`);
     setStatus(''); fallbackSpeak(clean);
   }
 }
