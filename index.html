@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>小博士問問看 🌟</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #fff9f0;
+      --surface: #ffffff;
+      --bubble-ai: #fff3d0;
+      --bubble-user: #ffe0b2;
+      --accent: #ff8c42;
+      --accent2: #4caf8c;
+      --text: #2d1f0e;
+      --text-light: #7a6048;
+      --radius: 24px;
+      --shadow: 0 4px 24px rgba(255,140,66,0.13);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Nunito', 'Arial Rounded MT Bold', 'Microsoft JhengHei', sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── 頂部標題 ── */
+    header {
+      width: 100%;
+      max-width: 700px;
+      padding: 28px 24px 0;
+      text-align: center;
+    }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .logo-emoji { font-size: 2.8rem; animation: bounce 2.5s infinite; }
+
+    @keyframes bounce {
+      0%,100% { transform: translateY(0); }
+      40% { transform: translateY(-10px); }
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 900;
+      color: var(--accent);
+      letter-spacing: 1px;
+    }
+
+    .subtitle {
+      font-size: 1rem;
+      color: var(--text-light);
+      font-weight: 600;
+      margin-bottom: 18px;
+    }
+
+    /* ── 聊天框 ── */
+    #chat-wrap {
+      width: 100%;
+      max-width: 700px;
+      flex: 1;
+      padding: 0 16px;
+    }
+
+    #chat-box {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px 16px;
+      min-height: 340px;
+      max-height: 50vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      scroll-behavior: smooth;
+    }
+
+    .msg {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      animation: fadeUp 0.3s ease;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .msg.user { flex-direction: row-reverse; }
+
+    .avatar {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem;
+      flex-shrink: 0;
+      background: #ffe0b2;
+    }
+    .msg.ai .avatar { background: #ffe0b2; }
+    .msg.user .avatar { background: #c8e6c9; }
+
+    .bubble {
+      max-width: 74%;
+      padding: 12px 18px;
+      border-radius: 20px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      line-height: 1.65;
+      color: var(--text);
+    }
+
+    .msg.ai .bubble {
+      background: var(--bubble-ai);
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg.user .bubble {
+      background: var(--bubble-user);
+      border-bottom-right-radius: 4px;
+    }
+
+    /* 打字動畫 */
+    .typing .bubble::after {
+      content: '⋯';
+      display: inline-block;
+      animation: dots 1s infinite;
+    }
+
+    @keyframes dots {
+      0%,100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+
+    /* ── 建議問題 ── */
+    .suggestions {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .sug-btn {
+      background: #fff3d0;
+      border: 2px solid #ffd07a;
+      border-radius: 50px;
+      padding: 7px 16px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #9a5c00;
+      cursor: pointer;
+      transition: background 0.18s, transform 0.14s;
+    }
+    .sug-btn:hover { background: #ffd07a; transform: scale(1.05); }
+
+    /* ── 輸入區 ── */
+    #input-area {
+      width: 100%;
+      max-width: 700px;
+      padding: 14px 16px 24px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      background: var(--surface);
+      border: 3px solid #ffd07a;
+      border-radius: 60px;
+      padding: 8px 8px 8px 20px;
+      box-shadow: var(--shadow);
+    }
+
+    #user-input {
+      flex: 1;
+      border: none;
+      outline: none;
+      font-family: inherit;
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+      background: transparent;
+    }
+    #user-input::placeholder { color: #c4a97a; }
+
+    .btn-mic, .btn-send {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem;
+      transition: transform 0.14s, background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .btn-mic {
+      background: #fff3d0;
+      color: #e07b00;
+    }
+    .btn-mic:hover { background: #ffd07a; transform: scale(1.1); }
+    .btn-mic.recording { background: #ff5252; animation: pulse 0.8s infinite; }
+    @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+
+    .btn-send {
+      background: var(--accent);
+      color: white;
+    }
+    .btn-send:hover { background: #e07b00; transform: scale(1.1); }
+    .btn-send:disabled { background: #ddd; cursor: default; transform: none; }
+
+    /* 語音狀態提示 */
+    #mic-status {
+      text-align: center;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #ff5252;
+      min-height: 20px;
+      padding: 2px 0 4px;
+      letter-spacing: 0.3px;
+    }
+
+    /* ── API KEY 設定 ── */
+    #api-modal {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.35);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+      padding: 16px;
+    }
+
+    .modal-box {
+      background: #fff;
+      border-radius: var(--radius);
+      padding: 32px 28px;
+      max-width: 440px; width: 100%;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+      text-align: center;
+    }
+
+    .modal-box h2 {
+      font-size: 1.5rem;
+      font-weight: 900;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .modal-box p { font-size: 0.95rem; color: var(--text-light); margin-bottom: 20px; line-height: 1.6; }
+
+    .modal-box input {
+      width: 100%;
+      border: 2px solid #ffd07a;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-family: inherit;
+      font-size: 1rem;
+      color: var(--text);
+      outline: none;
+      margin-bottom: 14px;
+    }
+
+    .modal-box input:focus { border-color: var(--accent); }
+
+    .modal-box button {
+      width: 100%;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 13px;
+      font-family: inherit;
+      font-size: 1.05rem;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .modal-box button:hover { background: #e07b00; }
+
+    .hint-link {
+      display: block;
+      margin-top: 12px;
+      font-size: 0.85rem;
+      color: var(--text-light);
+    }
+
+    /* ── 小裝飾星星 ── */
+    .stars {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .star {
+      position: absolute;
+      font-size: 1.2rem;
+      opacity: 0.15;
+      animation: drift linear infinite;
+    }
+
+    @keyframes drift {
+      0% { transform: translateY(0) rotate(0deg); }
+      100% { transform: translateY(-110vh) rotate(360deg); }
+    }
+
+    /* scrollbar */
+    #chat-box::-webkit-scrollbar { width: 5px; }
+    #chat-box::-webkit-scrollbar-track { background: transparent; }
+    #chat-box::-webkit-scrollbar-thumb { background: #ffd07a; border-radius: 10px; }
+
+    @media (max-width: 480px) {
+      h1 { font-size: 1.5rem; }
+      .bubble { font-size: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- 背景裝飾 -->
+<div class="stars" id="stars"></div>
+
+<!-- API Key 設定 Modal -->
+<div id="api-modal">
+  <div class="modal-box">
+    <div style="font-size:2.5rem;margin-bottom:8px">🔑</div>
+    <h2>設定 AI 金鑰</h2>
+    <p>請貼上您的 OpenAI API Key，才能讓小博士回答小朋友的問題喔！<br>金鑰只存在您的瀏覽器，不會上傳。</p>
+    <input type="password" id="api-key-input" placeholder="sk-..." autocomplete="off" />
+    <select id="model-select" style="width:100%;border:2px solid #ffd07a;border-radius:12px;padding:10px 14px;font-family:inherit;font-size:0.95rem;color:#2d1f0e;outline:none;margin-bottom:14px;background:#fff;">
+      <option value="gpt-4o-mini">gpt-4o-mini（省錢推薦 ✅）</option>
+      <option value="gpt-4o">gpt-4o（更聰明）</option>
+      <option value="gpt-3.5-turbo">gpt-3.5-turbo（最省）</option>
+    </select>
+    <button onclick="saveApiKey()">開始玩 🚀</button>
+    <a class="hint-link" href="https://platform.openai.com/api-keys" target="_blank">👉 還沒有 API Key？點這裡申請</a>
+  </div>
+</div>
+
+<!-- 主畫面 -->
+<header>
+  <div class="logo-row">
+    <span class="logo-emoji">🦉</span>
+    <h1>小博士問問看</h1>
+    <span class="logo-emoji" style="animation-delay:0.5s">⭐</span>
+  </div>
+  <div class="subtitle">三到六歲小朋友的專屬問答小幫手</div>
+</header>
+
+<div id="chat-wrap">
+  <div id="chat-box">
+    <!-- 歡迎訊息 by JS -->
+  </div>
+  <div class="suggestions" id="suggestions"></div>
+</div>
+
+<div id="input-area">
+  <div id="mic-status"></div>
+  <div class="input-row">
+    <input id="user-input" type="text" placeholder="問小博士任何問題…" maxlength="200"
+           autocomplete="off" onkeydown="if(event.key==='Enter')sendMsg()" />
+    <button class="btn-mic" id="btn-mic" onclick="toggleMic()" title="說話">🎤</button>
+    <button class="btn-send" id="btn-send" onclick="sendMsg()" title="送出">➤</button>
+  </div>
+</div>
+
+<script>
+/* ── 背景星星 ── */
+const starsEl = document.getElementById('stars');
+const EMOJIS = ['⭐','🌟','✨','🌈','🎈','🌸','🦋'];
+for(let i = 0; i < 18; i++){
+  const s = document.createElement('span');
+  s.className = 'star';
+  s.textContent = EMOJIS[i % EMOJIS.length];
+  s.style.left = Math.random()*100+'%';
+  s.style.bottom = '-40px';
+  s.style.animationDuration = (12 + Math.random()*18)+'s';
+  s.style.animationDelay = (Math.random()*20)+'s';
+  s.style.fontSize = (0.8 + Math.random()*0.9)+'rem';
+  starsEl.appendChild(s);
+}
+
+/* ── 狀態 ── */
+let apiKey = '';
+let model = 'gpt-4o-mini';
+let history = [];
+
+const SYSTEM_PROMPT = `
+你是「小博士」，一個專門為三到六歲小朋友設計的友善 AI 問答助手。
+
+【必須遵守的規則】
+1. 語言風格：
+   - 用最簡單、最可愛的繁體中文，像媽媽或老師說話
+   - 句子短、字少，一個回答不超過 4 句
+   - 多用比喻（「就像⋯一樣」）
+   - 可以適度用 emoji，每回答最多 3 個
+2. 內容安全：
+   - 絕對不能出現暴力、色情、恐怖、血腥的內容
+   - 不能說髒話、罵人或攻擊性語句
+   - 不能討論死亡細節、戰爭血腥畫面
+   - 如果問題不適合小朋友，請溫柔說「這個問題我們可以去問爸爸媽媽喔！」
+3. 鼓勵好奇心：
+   - 每次回答後可以問一個延伸問題，激發孩子繼續學習
+4. 不能做的事：
+   - 不能幫小朋友做作業（要引導他自己想）
+   - 不能推薦任何購買、消費
+   - 不能提供個人資訊或隱私建議
+
+現在開始吧！小朋友說什麼你就開心地回答。
+`.trim();
+
+const SUGGESTIONS = [
+  '為什麼天空是藍色的？🌤️',
+  '恐龍是怎麼消失的？🦕',
+  '彩虹怎麼來的？🌈',
+  '魚為什麼可以在水裡呼吸？🐟',
+  '星星是什麼做的？⭐',
+  '大象為什麼有長鼻子？🐘',
+];
+
+/* ── UI ── */
+const chatBox = document.getElementById('chat-box');
+const userInput = document.getElementById('user-input');
+const btnSend = document.getElementById('btn-send');
+const micStatus = document.getElementById('mic-status');
+const sugEl = document.getElementById('suggestions');
+
+function appendMsg(role, text){
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = role === 'ai' ? '🦉' : '👦';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+  div.appendChild(avatar);
+  div.appendChild(bubble);
+  chatBox.appendChild(div);
+  chatBox.scrollTop = chatBox.scrollHeight;
+  return bubble;
+}
+
+function appendTyping(){
+  const div = document.createElement('div');
+  div.className = 'msg ai typing';
+  div.id = 'typing-indicator';
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = '🦉';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = '小博士在想';
+  div.appendChild(avatar);
+  div.appendChild(bubble);
+  chatBox.appendChild(div);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function removeTyping(){
+  const el = document.getElementById('typing-indicator');
+  if(el) el.remove();
+}
+
+function renderSuggestions(){
+  sugEl.innerHTML = '';
+  const picks = SUGGESTIONS.sort(()=>Math.random()-0.5).slice(0,4);
+  picks.forEach(s => {
+    const b = document.createElement('button');
+    b.className = 'sug-btn';
+    b.textContent = s;
+    b.onclick = () => { userInput.value = s; sendMsg(); };
+    sugEl.appendChild(b);
+  });
+}
+
+/* ── API Key ── */
+function saveApiKey(){
+  const k = document.getElementById('api-key-input').value.trim();
+  model = document.getElementById('model-select').value;
+  if(!k.startsWith('sk-')){ alert('金鑰格式不對喔，要 sk- 開頭！'); return; }
+  apiKey = k;
+  localStorage.setItem('kids_qa_key', k);
+  localStorage.setItem('kids_qa_model', model);
+  document.getElementById('api-modal').style.display = 'none';
+  init();
+}
+
+/* ── 初始化 ── */
+function init(){
+  history = [];
+  chatBox.innerHTML = '';
+  appendMsg('ai', '嗨嗨！我是小博士🦉 你想問我什麼問題呀？什麼都可以問喔！');
+  renderSuggestions();
+}
+
+/* ── 送出訊息 ── */
+async function sendMsg(){
+  const text = userInput.value.trim();
+  if(!text || !apiKey) return;
+  userInput.value = '';
+  btnSend.disabled = true;
+  sugEl.innerHTML = '';
+
+  appendMsg('user', text);
+  history.push({ role: 'user', content: text });
+
+  appendTyping();
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions',{
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          ...history.slice(-10)
+        ],
+        temperature: 0.7,
+        max_tokens: 300
+      })
+    });
+
+    if(!res.ok){
+      const err = await res.json().catch(()=>({}));
+      throw new Error(err?.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const reply = data.choices[0].message.content.trim();
+    history.push({ role: 'assistant', content: reply });
+
+    removeTyping();
+    appendMsg('ai', reply);
+
+    /* 語音播報（瀏覽器 TTS） */
+    if(window.speechSynthesis){
+      const u = new SpeechSynthesisUtterance(reply.replace(/[\u{1F300}-\u{1FAFF}]/gu,''));
+      u.lang = 'zh-TW';
+      u.rate = 0.88;
+      u.pitch = 1.2;
+      window.speechSynthesis.speak(u);
+    }
+
+  } catch(e){
+    removeTyping();
+    appendMsg('ai', `哎呀，小博士遇到問題了 😅 請再試一次！（${e.message}）`);
+  }
+
+  btnSend.disabled = false;
+  renderSuggestions();
+}
+
+/* ── 語音輸入 ── */
+let recognition = null;
+let isRecording = false;
+
+function toggleMic(){
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SpeechRecognition){
+    micStatus.textContent = '⚠️ 你的瀏覽器不支援語音輸入，請用 Chrome 試試！';
+    return;
+  }
+
+  if(isRecording){
+    recognition && recognition.stop();
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.lang = 'zh-TW';
+  recognition.interimResults = true;
+  recognition.continuous = false;
+
+  recognition.onstart = () => {
+    isRecording = true;
+    document.getElementById('btn-mic').classList.add('recording');
+    micStatus.textContent = '🎤 正在聽你說話，說完後自動停止…';
+  };
+
+  recognition.onresult = (e) => {
+    const transcript = Array.from(e.results).map(r=>r[0].transcript).join('');
+    userInput.value = transcript;
+    if(e.results[e.results.length-1].isFinal){
+      recognition.stop();
+    }
+  };
+
+  recognition.onend = () => {
+    isRecording = false;
+    document.getElementById('btn-mic').classList.remove('recording');
+    micStatus.textContent = '';
+    if(userInput.value.trim()) sendMsg();
+  };
+
+  recognition.onerror = (e) => {
+    isRecording = false;
+    document.getElementById('btn-mic').classList.remove('recording');
+    micStatus.textContent = `⚠️ 語音辨識失敗：${e.error}`;
+  };
+
+  recognition.start();
+}
+
+/* ── 啟動 ── */
+window.addEventListener('DOMContentLoaded', ()=>{
+  const savedKey = localStorage.getItem('kids_qa_key');
+  const savedModel = localStorage.getItem('kids_qa_model');
+  if(savedKey){
+    document.getElementById('api-key-input').value = savedKey;
+    apiKey = savedKey;
+    if(savedModel){
+      model = savedModel;
+      document.getElementById('model-select').value = savedModel;
+    }
+    document.getElementById('api-modal').style.display = 'none';
+    init();
+  }
+});
+</script>
+</body>
+</html>
